@@ -15,8 +15,14 @@ class AuthState extends ChangeNotifier {
   String? get error => _error;
 
   Future<void> loadToken() async {
-    final sp = await SharedPreferences.getInstance();
-    _token = sp.getString('auth_token');
+    try {
+      final sp = await SharedPreferences.getInstance();
+      _token = sp.getString('auth_token');
+      print('loadToken: token=$_token');
+    } catch (e) {
+      print('loadToken error: $e');
+      _token = null;
+    }
     notifyListeners();
   }
 
