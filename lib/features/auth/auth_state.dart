@@ -42,13 +42,10 @@ class AuthState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final resp = await ApiClient().dio.post(
-        '/auth/login',
-        data: {'username': username, 'password': password},
+      final token = await ApiClient().login(
+        username: username,
+        password: password,
       );
-
-      final data = resp.data is Map ? resp.data : jsonDecode(resp.data);
-      final token = data['token'] as String?;
       if (token == null || token.isEmpty) {
         throw Exception('No token in response');
       }

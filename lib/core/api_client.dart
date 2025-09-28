@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'env.dart';
 
@@ -18,4 +20,18 @@ class ApiClient {
 
   late final Dio _dio;
   Dio get dio => _dio;
+
+  Future<String?> login({
+    required String username,
+    required String password,
+  }) async {
+    final resp = await this._dio.post(
+      '/auth/login',
+      data: {'username': username, 'password': password},
+    );
+
+    final data = resp.data is Map ? resp.data : jsonDecode(resp.data);
+    final token = data['token'] as String?;
+    return token;
+  }
 }
