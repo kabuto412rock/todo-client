@@ -9,6 +9,7 @@ The app provides a simple authentication flow and a Todo list screen that reads 
 - Login with username and password against the backend API (POST /auth/login)
 - Persist JWT/token locally and keep the session across launches
 - Fetch Todo list from the API (GET /todos)
+- Create a new todo (POST /todos) via the Add button (floating action button)
 - Simple UI with loading/error states and pull-to-refresh
 
 Code highlights:
@@ -62,9 +63,16 @@ The app is built to match the endpoints from the linked backend repo.
 	- Response: either a list of todos or an object containing a `todos` array
 	- Used by: `ApiClient.getTodoList(...)` and `TodoPage._fetchTodos(...)`
 
+- POST `/todos`
+		- Headers: `Authorization: Bearer <token>`
+		- Body: `{ "title": string, "done": boolean, "dueDate": ISO8601 string }`
+			- Note: If you don't select a due date in the UI, the current date-time is used by default.
+		- Response: a todo object or `{ "todo": { ... } }`
+		- Used by: `ApiClient.createTodo(...)` and `TodoPage`'s Add button
+
 Todo model expected shape:
 ```json
-{ "id": "string", "title": "string", "done": true|false }
+{ "id": "string", "title": "string", "done": true|false, "dueDate": "2023-10-10T10:00:00Z" }
 ```
 
 ## Run
@@ -80,6 +88,12 @@ flutter pub get
 flutter run --dart-define-from-file=env_dev.json
 ```
 
+If your backend is on a LAN host like `http://192.168.1.188:8081`, pass that instead:
+
+```bash
+flutter run --dart-define=BASE_URL=http://192.168.1.188:8081
+```
+
 On Windows you can also target the Windows desktop:
 
 ```bash
@@ -90,6 +104,7 @@ flutter run -d windows --dart-define-from-file=env_dev.json
 - On launch, the app loads any saved token and decides whether to show Login or Todos (`lib/app.dart`).
 - Login screen lets you enter credentials; on success, token is saved and the app navigates to Todos.
 - Todos screen fetches the list, shows loading/error states, supports pull-to-refresh, and allows basic local edits (UI-only for now).
+	- To create a todo, tap the Add button and enter a title. On success the new item appears at the top of the list.
 
 ## Troubleshooting
 - 401/403 when fetching todos: ensure the token is present and valid; try logging in again.
