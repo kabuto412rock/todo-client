@@ -58,4 +58,46 @@ class ApiClient {
         .map((e) => Todo.fromJson(e))
         .toList(growable: false);
   }
+
+  /// Create a new todo item by title.
+  /// Accepts responses shaped as either a plain todo object or
+  /// an envelope like { "todo": { ... } }.
+  Future<Todo> createTodo({
+    required String token,
+    required String title,
+    bool done = false,
+    DateTime? dueDate,
+  }) async {
+    final body = <String, dynamic>{
+      'title': title,
+      'done': done,
+      if (dueDate != null) 'dueDate': dueDate.toUtc().toIso8601String(),
+    };
+
+    final resp = await _dio.post(
+      '/todos',
+      data: jsonEncode(body),
+      options: Options(
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      ),
+    );
+
+    final dynamic data = resp.data is String
+        ? jsonDecode(resp.data)
+        : resp.data;
+
+    final Map<String, dynamic>? todoMap = data is Map<String, dynamic>
+        ? (data['todo'] is Map<String, dynamic>
+              ? data['todo'] as Map<String, dynamic>
+              : data)
+        : null;
+
+    if (todoMap == null) {
+      throw Exception('Unexpected createTodo response: ${resp.data}');
+    }
+    return Todo.fromJson(todoMap);
+  }
 }
