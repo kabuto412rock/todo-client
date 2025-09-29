@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:provider/provider.dart';
 import 'package:todo_client/features/todos/todo_model.dart';
 import 'package:todo_client/core/api_client.dart';
@@ -15,6 +16,7 @@ class _TodoPageState extends State<TodoPage> {
   List<Todo> todos = const [];
   String? editingId;
   final TextEditingController _editingController = TextEditingController();
+  Timer? _titleSaveDebounce;
   bool _loading = false;
   String? _error;
   bool _creating = false;
@@ -36,6 +38,7 @@ class _TodoPageState extends State<TodoPage> {
 
   @override
   void dispose() {
+    _cancelTitleDebounce();
     _editingController.dispose();
     _createController.dispose();
     super.dispose();
@@ -108,9 +111,15 @@ class _TodoPageState extends State<TodoPage> {
                 ? TextField(
                     controller: _editingController..text = todo.title,
                     autofocus: true,
-                    onSubmitted: (value) => _commitTitleEdit(index, value),
-                    onEditingComplete: () =>
-                        _commitTitleEdit(index, _editingController.text),
+                    onChanged: (value) => _onTitleChanged(index, value),
+                    onSubmitted: (value) {
+                      _cancelTitleDebounce();
+                      _commitTitleEdit(index, value);
+                    },
+                    onEditingComplete: () {
+                      _cancelTitleDebounce();
+                      _commitTitleEdit(index, _editingController.text);
+                    },
                   )
                 : GestureDetector(
                     onTap: () {
@@ -153,6 +162,67 @@ class _TodoPageState extends State<TodoPage> {
         },
       ),
     );
+  }
+
+  void _cancelTitleDebounce() {
+    _titleSaveDebounce?.cancel();
+    _titleSaveDebounce = null;
+  }
+
+  void _onTitleChanged(int index, String value) {
+    // Schedule autosave after 3s of inactivity
+    _cancelTitleDebounce();
+    _titleSaveDebounce = Timer(const Duration(seconds: 3), () {
+      _autosaveTitle(index);
+    });
+  }
+
+  Future<void> _autosaveTitle(int index) async {
+    if (!mounted) return;
+    // Ensure the item and editing context are still valid
+    if (index < 0 || index >= todos.length) return;
+    final current = todos[index];
+    if (editingId != current.id) return;
+
+    final text = _editingController.text.trim();
+    if (text.isEmpty || text == current.title) {
+      return; // nothing to save
+    }
+
+    final auth = context.read<AuthState>();
+    final token = auth.token;
+    if (token == null || token.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Not authenticated')));
+      return;
+    }
+
+    setState(() => _updatingIds.add(current.id));
+    try {
+      final updated = await ApiClient().updateTodo(
+        token: token,
+        todoId: current.id,
+        title: text,
+        done: current.done,
+        dueDate: current.dueDate,
+      );
+      if (!mounted) return;
+      setState(() {
+        // Keep editing state; just refresh the saved data
+        todos[index] = updated;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Autosave failed: $e')));
+    } finally {
+      if (mounted) {
+        setState(() => _updatingIds.remove(current.id));
+      }
+    }
   }
 
   Future<void> _fetchTodos() async {
@@ -321,8 +391,15 @@ class _TodoPageState extends State<TodoPage> {
         dueDate: due ?? DateTime.now(),
       );
       if (!mounted) return;
+      // Some backends may omit or return empty title; ensure we display the entered title.
+      final displayed = Todo(
+        id: created.id,
+        title: (created.title.isEmpty) ? title : created.title,
+        done: created.done,
+        dueDate: created.dueDate ?? due,
+      );
       setState(() {
-        todos = [created, ...todos];
+        todos = [displayed, ...todos];
       });
       Navigator.of(context).pop();
     } catch (e) {
@@ -338,6 +415,23 @@ class _TodoPageState extends State<TodoPage> {
   Future<void> _commitTitleEdit(int index, String newTitle) async {
     final original = todos[index];
     final trimmed = newTitle.trim();
+
+    final auth = context.read<AuthState>();
+    final token = auth.token;
+    if (token == null || token.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Not authenticated')));
+      // Revert any local changes since we didn't call the API
+      setState(() {
+        todos[index] = original;
+        _updatingIds.remove(original.id);
+        editingId = null;
+      });
+      return;
+    }
+
+    // Optimistic UI update after auth check
     setState(() {
       todos[index] = Todo(
         id: original.id,
@@ -349,21 +443,13 @@ class _TodoPageState extends State<TodoPage> {
       _updatingIds.add(original.id);
     });
 
-    final auth = context.read<AuthState>();
-    final token = auth.token;
-    if (token == null || token.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Not authenticated')));
-      setState(() => _updatingIds.remove(original.id));
-      return;
-    }
-
     try {
       final updated = await ApiClient().updateTodo(
         token: token,
-        id: original.id,
+        todoId: original.id,
         title: trimmed.isEmpty ? original.title : trimmed,
+        done: original.done,
+        dueDate: original.dueDate,
       );
       if (!mounted) return;
       setState(() {
@@ -411,8 +497,10 @@ class _TodoPageState extends State<TodoPage> {
     try {
       final updated = await ApiClient().updateTodo(
         token: token,
-        id: original.id,
+        todoId: original.id,
+        title: original.title,
         done: value,
+        dueDate: original.dueDate,
       );
       if (!mounted) return;
       setState(() {
