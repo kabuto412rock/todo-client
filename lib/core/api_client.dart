@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'env.dart';
+import 'package:todo_client/features/todos/todo_model.dart';
 
 class ApiClient {
   ApiClient._internal() {
@@ -33,5 +34,28 @@ class ApiClient {
     final data = resp.data is Map ? resp.data : jsonDecode(resp.data);
     final token = data['token'] as String?;
     return token;
+  }
+
+  Future<List<Todo>> getTodoList({required String token}) async {
+    final resp = await _dio.get(
+      '/todos',
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
+
+    final dynamic data = resp.data is String
+        ? jsonDecode(resp.data)
+        : resp.data;
+
+    // Accept either a plain list or an object with a `data` list
+    final List<dynamic> rawList = data is List
+        ? data
+        : (data is Map<String, dynamic> && data['todos'] is List
+              ? data['todos'] as List
+              : <dynamic>[]);
+
+    return rawList
+        .whereType<Map<String, dynamic>>()
+        .map((e) => Todo.fromJson(e))
+        .toList(growable: false);
   }
 }
