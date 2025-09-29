@@ -1,0 +1,11 @@
+# Ignore Flutter default platform code
+android/* linguist-vendored
+ios/* linguist-vendored
+macos/* linguist-vendored
+linux/* linguist-vendored
+windows/* linguist-vendored
+web/* linguist-vendored
+
+# Ensure Dart is correctly recognized
+*.dart linguist-language=Dart
+
