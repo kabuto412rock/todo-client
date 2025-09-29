@@ -22,6 +22,7 @@ class _TodoPageState extends State<TodoPage> {
   bool _createDone = false;
   DateTime? _createDue;
   String? _deletingId;
+  final Set<String> _updatingIds = <String>{};
 
   @override
   void initState() {
@@ -101,31 +102,15 @@ class _TodoPageState extends State<TodoPage> {
         itemCount: todos.length,
         itemBuilder: (context, index) {
           final todo = todos[index];
+          final isUpdating = _updatingIds.contains(todo.id);
           return ListTile(
             title: editingId == todo.id
                 ? TextField(
                     controller: _editingController..text = todo.title,
                     autofocus: true,
-                    onSubmitted: (value) {
-                      setState(() {
-                        todos[index] = Todo(
-                          id: todo.id,
-                          title: value,
-                          done: todo.done,
-                        );
-                        editingId = null;
-                      });
-                    },
-                    onEditingComplete: () {
-                      setState(() {
-                        todos[index] = Todo(
-                          id: todo.id,
-                          title: _editingController.text,
-                          done: todo.done,
-                        );
-                        editingId = null;
-                      });
-                    },
+                    onSubmitted: (value) => _commitTitleEdit(index, value),
+                    onEditingComplete: () =>
+                        _commitTitleEdit(index, _editingController.text),
                   )
                 : GestureDetector(
                     onTap: () {
@@ -141,18 +126,13 @@ class _TodoPageState extends State<TodoPage> {
               children: [
                 Checkbox(
                   value: todo.done,
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() {
-                        todos[index] = Todo(
-                          id: todo.id,
-                          title: todo.title,
-                          done: value,
-                          dueDate: todo.dueDate,
-                        );
-                      });
-                    }
-                  },
+                  onChanged: isUpdating
+                      ? null
+                      : (value) {
+                          if (value != null) {
+                            _toggleDone(index, value);
+                          }
+                        },
                 ),
                 IconButton(
                   icon: _deletingId == todo.id
@@ -163,7 +143,7 @@ class _TodoPageState extends State<TodoPage> {
                         )
                       : const Icon(Icons.delete_outline),
                   tooltip: 'Delete',
-                  onPressed: _deletingId == todo.id
+                  onPressed: _deletingId == todo.id || isUpdating
                       ? null
                       : () => _confirmAndDelete(todo.id),
                 ),
@@ -352,6 +332,102 @@ class _TodoPageState extends State<TodoPage> {
       ).showSnackBar(SnackBar(content: Text('Create failed: $e')));
     } finally {
       if (mounted) setState(() => _creating = false);
+    }
+  }
+
+  Future<void> _commitTitleEdit(int index, String newTitle) async {
+    final original = todos[index];
+    final trimmed = newTitle.trim();
+    setState(() {
+      todos[index] = Todo(
+        id: original.id,
+        title: trimmed.isEmpty ? original.title : trimmed,
+        done: original.done,
+        dueDate: original.dueDate,
+      );
+      editingId = null;
+      _updatingIds.add(original.id);
+    });
+
+    final auth = context.read<AuthState>();
+    final token = auth.token;
+    if (token == null || token.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Not authenticated')));
+      setState(() => _updatingIds.remove(original.id));
+      return;
+    }
+
+    try {
+      final updated = await ApiClient().updateTodo(
+        token: token,
+        id: original.id,
+        title: trimmed.isEmpty ? original.title : trimmed,
+      );
+      if (!mounted) return;
+      setState(() {
+        // Merge server response in case other fields changed
+        todos[index] = updated;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        todos[index] = original; // revert
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Update title failed: $e')));
+    } finally {
+      if (mounted) setState(() => _updatingIds.remove(original.id));
+    }
+  }
+
+  Future<void> _toggleDone(int index, bool value) async {
+    final original = todos[index];
+    setState(() {
+      todos[index] = Todo(
+        id: original.id,
+        title: original.title,
+        done: value,
+        dueDate: original.dueDate,
+      );
+      _updatingIds.add(original.id);
+    });
+
+    final auth = context.read<AuthState>();
+    final token = auth.token;
+    if (token == null || token.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Not authenticated')));
+      setState(() {
+        todos[index] = original; // revert
+        _updatingIds.remove(original.id);
+      });
+      return;
+    }
+
+    try {
+      final updated = await ApiClient().updateTodo(
+        token: token,
+        id: original.id,
+        done: value,
+      );
+      if (!mounted) return;
+      setState(() {
+        todos[index] = updated;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        todos[index] = original; // revert
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Update status failed: $e')));
+    } finally {
+      if (mounted) setState(() => _updatingIds.remove(original.id));
     }
   }
 

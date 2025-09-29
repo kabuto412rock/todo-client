@@ -113,4 +113,44 @@ class ApiClient {
     );
     return resp.statusCode != null && resp.statusCode! ~/ 100 == 2;
   }
+
+  /// Update a todo by id. Sends only provided fields (PATCH style).
+  /// Accepts responses shaped as either a plain todo object or
+  /// an envelope like { "todo": { ... } }.
+  Future<Todo> updateTodo({
+    required String token,
+    required String id,
+    String? title,
+    bool? done,
+    DateTime? dueDate,
+  }) async {
+    final body = <String, dynamic>{};
+    if (title != null) body['title'] = title;
+    if (done != null) body['done'] = done;
+    if (dueDate != null) body['dueDate'] = dueDate.toUtc().toIso8601String();
+
+    final resp = await _dio.patch(
+      '/todos/$id',
+      data: jsonEncode(body),
+      options: Options(headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      }),
+    );
+
+    final dynamic data = resp.data is String
+        ? jsonDecode(resp.data)
+        : resp.data;
+
+    final Map<String, dynamic>? todoMap = data is Map<String, dynamic>
+        ? (data['todo'] is Map<String, dynamic>
+              ? data['todo'] as Map<String, dynamic>
+              : data)
+        : null;
+
+    if (todoMap == null) {
+      throw Exception('Unexpected updateTodo response: ${resp.data}');
+    }
+    return Todo.fromJson(todoMap);
+  }
 }
