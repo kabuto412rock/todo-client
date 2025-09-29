@@ -26,7 +26,7 @@ class ApiClient {
     required String username,
     required String password,
   }) async {
-    final resp = await this._dio.post(
+    final resp = await _dio.post(
       '/auth/login',
       data: {'username': username, 'password': password},
     );
@@ -99,5 +99,18 @@ class ApiClient {
       throw Exception('Unexpected createTodo response: ${resp.data}');
     }
     return Todo.fromJson(todoMap);
+  }
+
+  /// Delete a todo by id.
+  /// Returns true if the server responds with 200-299.
+  Future<bool> deleteTodo({
+    required String token,
+    required String id,
+  }) async {
+    final resp = await _dio.delete(
+      '/todos/$id',
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
+    return resp.statusCode != null && resp.statusCode! ~/ 100 == 2;
   }
 }

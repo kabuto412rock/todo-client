@@ -21,6 +21,7 @@ class _TodoPageState extends State<TodoPage> {
   final TextEditingController _createController = TextEditingController();
   bool _createDone = false;
   DateTime? _createDue;
+  String? _deletingId;
 
   @override
   void initState() {
@@ -135,19 +136,38 @@ class _TodoPageState extends State<TodoPage> {
                     },
                     child: Text(todo.title),
                   ),
-            trailing: Checkbox(
-              value: todo.done,
-              onChanged: (value) {
-                if (value != null) {
-                  setState(() {
-                    todos[index] = Todo(
-                      id: todo.id,
-                      title: todo.title,
-                      done: value,
-                    );
-                  });
-                }
-              },
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Checkbox(
+                  value: todo.done,
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        todos[index] = Todo(
+                          id: todo.id,
+                          title: todo.title,
+                          done: value,
+                          dueDate: todo.dueDate,
+                        );
+                      });
+                    }
+                  },
+                ),
+                IconButton(
+                  icon: _deletingId == todo.id
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.delete_outline),
+                  tooltip: 'Delete',
+                  onPressed: _deletingId == todo.id
+                      ? null
+                      : () => _confirmAndDelete(todo.id),
+                ),
+              ],
             ),
           );
         },
@@ -332,6 +352,56 @@ class _TodoPageState extends State<TodoPage> {
       ).showSnackBar(SnackBar(content: Text('Create failed: $e')));
     } finally {
       if (mounted) setState(() => _creating = false);
+    }
+  }
+
+  Future<void> _confirmAndDelete(String id) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Todo'),
+        content: const Text('Are you sure you want to delete this todo?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final auth = context.read<AuthState>();
+    final token = auth.token;
+    if (token == null || token.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Not authenticated')));
+      return;
+    }
+
+    setState(() => _deletingId = id);
+    try {
+      final ok = await ApiClient().deleteTodo(token: token, id: id);
+      if (ok) {
+        setState(() {
+          todos = todos.where((t) => t.id != id).toList(growable: false);
+        });
+      } else {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Delete failed')));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Delete error: $e')));
+    } finally {
+      if (mounted) setState(() => _deletingId = null);
     }
   }
 }
